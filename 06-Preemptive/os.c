@@ -1,7 +1,9 @@
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 #include "reg.h"
 #include "asm.h"
+#include "host.h"
 
 /* Size of our user task stacks in words */
 #define STACK_SIZE	256
@@ -103,6 +105,52 @@ void task2_func(void)
 	}
 }
 
+void system_logger(void)
+{
+//    signed char buf[128];
+    char output[512] = {0};
+    char *tag = "\nName          State   Priority  Stack  Num\n*******************************************\n";
+    int handle, error;
+    const int Delay = 100000 / 100;
+
+    print_str("System logger: Created!\n");
+
+    handle = host_action(SYS_SYSTEM, "mkdir -p output");
+    handle = host_action(SYS_SYSTEM, "touch output/syslog");
+    handle = host_action(SYS_OPEN, "output/syslog", 4);
+    if(handle == -1) {
+        print_str("System logger: Open file error!\n");
+        return;
+    }
+
+    syscall();
+    while(1) {
+	print_str("System logger: Begin writing file\n");
+        memcpy(output, tag, strlen(tag));
+        error = host_action(SYS_WRITE, handle, (void *)output, strlen(output));
+        if(error != 0) {
+            print_str("System logger: Write file error!\n\r");
+            host_action(SYS_CLOSE, handle);
+            return;
+        }
+//        vTaskList(buf);
+
+//        memcpy(output, (char *)(buf + 2), strlen((char *)buf) - 2);
+
+        error = host_action(SYS_WRITE, handle, (void *)output, strlen(output));
+        if(error != 0) {
+            print_str("System logger: Write file error!\n\r");
+            host_action(SYS_CLOSE, handle);
+            return;
+        }
+	print_str("System logger: End writing file\n");
+
+        delay(Delay);
+    }
+    
+    host_action(SYS_CLOSE, handle);
+}
+
 int main(void)
 {
 	unsigned int user_stacks[TASK_LIMIT][STACK_SIZE];
@@ -118,6 +166,9 @@ int main(void)
 	task_count += 1;
 	print_str("OS: Back to OS, create task 2\n");
 	usertasks[1] = create_task(user_stacks[1], &task2_func);
+	task_count += 1;
+	print_str("OS: Start system logger\n");
+	usertasks[2] = create_task(user_stacks[2], &system_logger);
 	task_count += 1;
 
 	print_str("\nOS: Start round-robin scheduler!\n");
